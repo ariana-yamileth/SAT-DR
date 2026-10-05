@@ -1,0 +1,12 @@
+{
+  "umbral": 0.23,
+  "recall": 0.878,
+  "precision": 0.589,
+  "exactitud": 0.76,
+  "matriz": {
+    "tn": 142,
+    "fp": 60,
+    "fn": 12,
+    "tp": 86
+  }
+}
