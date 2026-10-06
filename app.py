@@ -1,7 +1,57 @@
 """SAT-DR: Sistema de Alerta Temprana de Deserción y Reprobación (app web)."""
 import json, joblib, pandas as pd, streamlit as st
 
-st.set_page_config(page_title="SAT-DR", page_icon="🎓", layout="centered")
+st.set_page_config(page_title="SAT-DR", layout="centered")
+
+st.markdown(
+    """
+    <style>
+    :root {
+        --primario: 59, 143, 219;      /* azul de los controles */
+        --acento: 40, 170, 160;        /* verde azulado del fondo */
+    }
+    .stApp {
+        background:
+            radial-gradient(ellipse 80% 50% at 15% 0%, rgba(var(--primario), 0.28), transparent 60%),
+            radial-gradient(ellipse 70% 45% at 90% 10%, rgba(var(--acento), 0.18), transparent 60%),
+            linear-gradient(180deg, #0b1220 0%, #0e1627 55%, #0a101c 100%);
+        background-attachment: fixed;
+    }
+    [data-testid="stHeader"] { background: transparent; }
+
+    /* Textos secundarios con tono azulado en lugar de gris neutro */
+    [data-testid="stCaptionContainer"], [data-testid="stMetricLabel"] { color: #9FB1CC; }
+
+    /* Cuadro informativo en la misma gama azul */
+    [data-testid="stAlert"], [data-testid="stAlertContainer"] {
+        background-color: rgba(var(--primario), 0.16);
+        color: #E6EDF7;
+    }
+
+    /* Líneas y bordes (tabs, tablas) con tono azul oscuro */
+    .stTabs [data-baseweb="tab-list"] { border-bottom: 1px solid rgba(159, 177, 204, 0.25); }
+    [data-testid="stTable"] table, [data-testid="stTable"] th, [data-testid="stTable"] td {
+        border-color: rgba(159, 177, 204, 0.22);
+    }
+
+    /* Reemplaza el rojo por defecto de Streamlit por el azul de la paleta */
+    .stButton > button[kind="primary"],
+    button[data-testid="stBaseButton-primary"] {
+        background-color: #3B8FDB; border-color: #3B8FDB; color: #FFFFFF; font-weight: 600;
+    }
+    .stButton > button[kind="primary"]:hover,
+    button[data-testid="stBaseButton-primary"]:hover {
+        background-color: #5BA3E6; border-color: #5BA3E6; color: #FFFFFF;
+    }
+    .stTabs [data-baseweb="tab"][aria-selected="true"] { color: #5BA3E6; }
+    .stTabs [data-baseweb="tab-highlight"] { background-color: #3B8FDB; }
+    /* Sliders y barra de progreso: giran el rojo al azul */
+    [data-testid="stSlider"] [data-baseweb="slider"] > div:first-child,
+    [data-testid="stProgress"] { filter: hue-rotate(208deg); }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 @st.cache_resource
 def cargar():
@@ -13,7 +63,7 @@ modelo, umbral, FEATURES = paquete["modelo"], paquete["umbral"], paquete["featur
 def clasificar(p):
     return "🔴 Riesgo alto" if p >= umbral else ("🟡 Vigilancia" if p >= umbral * 0.6 else "🟢 Sin riesgo")
 
-st.title("🎓 SAT-DR")
+st.title("SAT-DR")
 st.caption("Sistema de Alerta Temprana de Deserción y Reprobación · Red neuronal densa (MLP)")
 t1, t2, t3 = st.tabs(["Estudiante individual", "Carga por lote (CSV)", "Rendimiento del modelo"])
 
@@ -39,7 +89,15 @@ with t2:
             df["clasificacion"] = df["probabilidad"].apply(clasificar)
             st.dataframe(df.sort_values("probabilidad", ascending=False), use_container_width=True)
             st.write(f"**{(df.probabilidad >= umbral).sum()}** de {len(df)} estudiantes en riesgo alto.")
-            st.download_button("Descargar resultados", df.to_csv(index=False), "resultados.csv")
+            # Para Excel: sin emojis y con codificación UTF-8 con BOM (evita caracteres rotos)
+            export = df.copy()
+            export["clasificacion"] = export["clasificacion"].str.split(" ", n=1).str[1]
+            st.download_button(
+                "Descargar resultados",
+                export.to_csv(index=False).encode("utf-8-sig"),
+                "resultados.csv",
+                mime="text/csv",
+            )
         except KeyError:
             st.error("El archivo debe tener las columnas: asistencia, calificaciones, entregas.")
 
