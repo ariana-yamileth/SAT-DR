@@ -89,7 +89,6 @@ with t2:
             df["clasificacion"] = df["probabilidad"].apply(clasificar)
             st.dataframe(df.sort_values("probabilidad", ascending=False), use_container_width=True)
             st.write(f"**{(df.probabilidad >= umbral).sum()}** de {len(df)} estudiantes en riesgo alto.")
-            # Para Excel: sin emojis y con codificación UTF-8 con BOM (evita caracteres rotos)
             export = df.copy()
             export["clasificacion"] = export["clasificacion"].str.split(" ", n=1).str[1]
             st.download_button(
