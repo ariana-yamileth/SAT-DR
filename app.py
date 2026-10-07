@@ -1,5 +1,5 @@
 """SAT-DR: Sistema de Alerta Temprana de Deserción y Reprobación (app web)."""
-import json, joblib, pandas as pd, streamlit as st
+import json, joblib, altair as alt, pandas as pd, streamlit as st
 
 st.set_page_config(page_title="SAT-DR", layout="centered")
 
@@ -45,9 +45,6 @@ st.markdown(
     }
     .stTabs [data-baseweb="tab"][aria-selected="true"] { color: #5BA3E6; }
     .stTabs [data-baseweb="tab-highlight"] { background-color: #3B8FDB; }
-    /* Sliders y barra de progreso: giran el rojo al azul */
-    [data-testid="stSlider"] [data-baseweb="slider"] > div:first-child,
-    [data-testid="stProgress"] { filter: hue-rotate(208deg); }
     </style>
     """,
     unsafe_allow_html=True,
@@ -62,6 +59,24 @@ modelo, umbral, FEATURES = paquete["modelo"], paquete["umbral"], paquete["featur
 
 def clasificar(p):
     return "🔴 Riesgo alto" if p >= umbral else ("🟡 Vigilancia" if p >= umbral * 0.6 else "🟢 Sin riesgo")
+
+NIVELES = ["🔴 Riesgo alto", "🟡 Vigilancia", "🟢 Sin riesgo"]
+COLORES = ["#E5484D", "#F5B83D", "#30A46C"]
+
+def grafica_distribucion(df):
+    """Barras: cuántos estudiantes hay en cada nivel de riesgo."""
+    conteo = (df["clasificacion"].value_counts()
+              .reindex(NIVELES, fill_value=0).rename_axis("nivel").reset_index(name="estudiantes"))
+    base = alt.Chart(conteo).encode(
+        x=alt.X("nivel:N", sort=NIVELES, title=None, axis=alt.Axis(labelAngle=0)),
+        y=alt.Y("estudiantes:Q", title="Estudiantes"),
+    )
+    barras = base.mark_bar().encode(
+        color=alt.Color("nivel:N", scale=alt.Scale(domain=NIVELES, range=COLORES), legend=None),
+        tooltip=["nivel", "estudiantes"],
+    )
+    etiquetas = base.mark_text(dy=-8, fontWeight="bold").encode(text="estudiantes:Q")
+    return (barras + etiquetas).properties(height=280)
 
 st.title("SAT-DR")
 st.caption("Sistema de Alerta Temprana de Deserción y Reprobación · Red neuronal densa (MLP)")
@@ -87,8 +102,11 @@ with t2:
             df = pd.read_csv(f)
             df["probabilidad"] = modelo.predict_proba(df[FEATURES])[:, 1].round(3)
             df["clasificacion"] = df["probabilidad"].apply(clasificar)
-            st.dataframe(df.sort_values("probabilidad", ascending=False), use_container_width=True)
             st.write(f"**{(df.probabilidad >= umbral).sum()}** de {len(df)} estudiantes en riesgo alto.")
+            st.write("**Distribución por nivel de riesgo**")
+            st.altair_chart(grafica_distribucion(df), use_container_width=True)
+            st.dataframe(df.sort_values("probabilidad", ascending=False), use_container_width=True)
+
             export = df.copy()
             export["clasificacion"] = export["clasificacion"].str.split(" ", n=1).str[1]
             st.download_button(
