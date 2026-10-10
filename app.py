@@ -1,5 +1,5 @@
 """SAT-DR: Sistema de Alerta Temprana de Deserción y Reprobación (app web)."""
-import json, joblib, altair as alt, pandas as pd, streamlit as st
+import io, json, joblib, altair as alt, pandas as pd, streamlit as st
 
 st.set_page_config(page_title="SAT-DR", layout="centered")
 
@@ -21,12 +21,6 @@ st.markdown(
 
     /* Textos secundarios con tono azulado en lugar de gris neutro */
     [data-testid="stCaptionContainer"], [data-testid="stMetricLabel"] { color: #9FB1CC; }
-
-    /* Cuadro informativo en la misma gama azul */
-    [data-testid="stAlert"], [data-testid="stAlertContainer"] {
-        background-color: rgba(var(--primario), 0.16);
-        color: #E6EDF7;
-    }
 
     /* Líneas y bordes (tabs, tablas) con tono azul oscuro */
     .stTabs [data-baseweb="tab-list"] { border-bottom: 1px solid rgba(159, 177, 204, 0.25); }
@@ -78,6 +72,13 @@ def grafica_distribucion(df):
     etiquetas = base.mark_text(dy=-8, fontWeight="bold").encode(text="estudiantes:Q")
     return (barras + etiquetas).properties(height=280)
 
+TEXTO_ALTO = "Se recomienda canalizar al estudiante a tutoría."
+TEXTO_VIGILANCIA = "Cerca del umbral de riesgo. Dar seguimiento cercano y volver a evaluar antes del siguiente parcial."
+TEXTO_SIN_RIESGO = "Sin acción inmediata; continuar monitoreo."
+
+def recomendar(p):
+    return TEXTO_ALTO if p >= umbral else (TEXTO_VIGILANCIA if p >= umbral * 0.6 else TEXTO_SIN_RIESGO)
+
 st.title("SAT-DR")
 st.caption("Sistema de Alerta Temprana de Deserción y Reprobación · Red neuronal densa (MLP)")
 t1, t2, t3 = st.tabs(["Estudiante individual", "Carga por lote (CSV)", "Rendimiento del modelo"])
@@ -91,17 +92,24 @@ with t1:
         st.metric("Probabilidad de riesgo", f"{p:.2f}")
         st.progress(min(p, 1.0))
         st.subheader(clasificar(p))
-        st.info("Se recomienda canalizar al estudiante a tutoría." if p >= umbral else "Sin acción inmediata; continuar monitoreo.")
+        if p >= umbral:
+            st.error(TEXTO_ALTO)
+        elif p >= umbral * 0.6:
+            st.warning(TEXTO_VIGILANCIA)
+        else:
+            st.success(TEXTO_SIN_RIESGO)
 
 with t2:
-    st.write("Sube un CSV con las columnas: `asistencia`, `calificaciones`, `entregas`.")
+    st.write("Sube un archivo CSV o Excel (.xlsx) con las columnas: `asistencia`, `calificaciones`, `entregas`.")
     st.download_button("Descargar CSV de ejemplo", open("data/estudiantes.csv").read(), "ejemplo.csv")
-    f = st.file_uploader("Archivo CSV", type="csv")
+    f = st.file_uploader("Archivo CSV o Excel", type=["csv", "xlsx"])
     if f:
         try:
-            df = pd.read_csv(f)
+            es_excel = f.name.lower().endswith(".xlsx")
+            df = pd.read_excel(f) if es_excel else pd.read_csv(f)
             df["probabilidad"] = modelo.predict_proba(df[FEATURES])[:, 1].round(3)
             df["clasificacion"] = df["probabilidad"].apply(clasificar)
+            df["recomendacion"] = df["probabilidad"].apply(recomendar)
             st.write(f"**{(df.probabilidad >= umbral).sum()}** de {len(df)} estudiantes en riesgo alto.")
             st.write("**Distribución por nivel de riesgo**")
             st.altair_chart(grafica_distribucion(df), use_container_width=True)
@@ -109,14 +117,29 @@ with t2:
 
             export = df.copy()
             export["clasificacion"] = export["clasificacion"].str.split(" ", n=1).str[1]
-            st.download_button(
-                "Descargar resultados",
-                export.to_csv(index=False).encode("utf-8-sig"),
-                "resultados.csv",
-                mime="text/csv",
-            )
+            if es_excel:
+                buffer = io.BytesIO()
+                export.to_excel(buffer, index=False, engine="openpyxl")
+                st.download_button(
+                    "Descargar resultados (Excel)",
+                    buffer.getvalue(),
+                    "resultados.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+            else:
+                st.download_button(
+                    "Descargar resultados (CSV)",
+                    export.to_csv(index=False).encode("utf-8-sig"),
+                    "resultados.csv",
+                    mime="text/csv",
+                )
         except KeyError:
             st.error("El archivo debe tener las columnas: asistencia, calificaciones, entregas.")
+        except ImportError:
+            st.error("Falta la librería `openpyxl` para leer archivos Excel. Agrégala a requirements.txt (o ejecuta `pip install openpyxl`).")
+        except Exception as err:
+            st.error("No se pudo leer el archivo. Verifica que sea un CSV o un Excel (.xlsx) válido.")
+            st.caption(f"Detalle técnico: {type(err).__name__}: {err}")
 
 with t3:
     m = metricas["matriz"]
